@@ -1,206 +1,398 @@
 
 import streamlit as st
-import pandas as pd
-import plotly.express as px
+import csv
+import io
 from datetime import date, timedelta
 
+# 기본 설정
 st.set_page_config(
-    page_title="존중 그래프",
+    page_title="하루 존중 그래프",
     page_icon="💚",
     layout="wide"
 )
 
+# 디자인
 st.markdown("""
 <style>
-.stApp {background-color: #F7FAF7;}
-h1, h2, h3 {color: #285943;}
-[data-testid="stMetric"] {
-    background: white;
-    padding: 16px;
+.stApp {
+    background-color: #F7FAF8;
+}
+.main-title {
+    background: linear-gradient(120deg, #DDF3E4, #EAF5F0);
+    padding: 25px;
+    border-radius: 18px;
+    margin-bottom: 20px;
+}
+.main-title h1 {
+    color: #285943;
+}
+.main-title p {
+    color: #476B56;
+}
+div[data-testid="stMetric"] {
+    background-color: white;
+    padding: 15px;
     border-radius: 12px;
     border: 1px solid #DDE9DF;
 }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("💚 존중 그래프")
-st.write("하루 동안 내가 얼마나 존중받았는지 기록하고 변화를 살펴봐요.")
+# 제목
+st.markdown("""
+<div class="main-title">
+    <h1>💚 하루 존중 그래프</h1>
+    <p>오늘 나는 얼마나 존중받았을까요?</p>
+    <p>작은 경험을 기록하고 우리 주변의 존중 분위기를 돌아봐요.</p>
+</div>
+""", unsafe_allow_html=True)
 
+# 기록 저장
 if "records" not in st.session_state:
     st.session_state.records = []
 
+# 메뉴
 menu = st.sidebar.radio(
-    "메뉴",
-    ["오늘 기록하기", "존중 그래프", "기록 모아보기"]
+    "메뉴 선택",
+    ["오늘의 존중 기록", "존중 그래프", "기록 모아보기"]
 )
 
-st.sidebar.info("점수는 다른 사람과 비교하기보다 나의 경험을 돌아보기 위한 기준이에요.")
+st.sidebar.markdown("---")
+st.sidebar.caption("나의 경험을 기록하는 공간입니다.")
 
-if menu == "오늘 기록하기":
-    st.header("오늘의 존중 기록")
+# --------------------------------
+# 1. 오늘의 존중 기록
+# --------------------------------
 
-    with st.form("record_form"):
-        record_date = st.date_input("날짜", value=date.today())
-        score = st.slider("오늘 존중받은 정도", 0, 10, 7)
+if menu == "오늘의 존중 기록":
+
+    st.header("📝 오늘의 존중 기록")
+    st.write("오늘 하루를 떠올리며 솔직하게 평가해 보세요.")
+
+    with st.form("respect_form"):
+
+        selected_date = st.date_input(
+            "기록 날짜",
+            value=date.today()
+        )
+
+        score = st.slider(
+            "오늘 존중받은 정도",
+            min_value=0,
+            max_value=10,
+            value=7
+        )
 
         if score <= 2:
-            label = "많이 아쉬웠어요"
+            message = "존중이 많이 부족했다고 느낀 하루"
         elif score <= 4:
-            label = "조금 아쉬웠어요"
+            message = "아쉬운 순간이 있었던 하루"
         elif score <= 6:
-            label = "보통이었어요"
+            message = "평범한 하루"
         elif score <= 8:
-            label = "대체로 존중받았어요"
+            message = "대체로 존중받은 하루"
         else:
-            label = "충분히 존중받았어요"
+            message = "충분히 존중받은 하루"
 
-        st.subheader(f"{score}점 · {label}")
+        st.subheader(f"{score}점 / 10점")
+        st.info(message)
 
-        factors = st.multiselect(
-            "오늘 경험한 상황",
+        experiences = st.multiselect(
+            "오늘 경험한 존중의 모습",
             [
-                "내 의견을 들어줌",
-                "말을 끊지 않고 경청함",
-                "배려와 친절",
-                "공정한 대우",
-                "다름을 존중함",
-                "무시하거나 비난하는 말",
-                "의견을 표현하기 어려웠음"
+                "내 의견을 존중해 줌",
+                "내 말을 끝까지 들어 줌",
+                "친절하게 대해 줌",
+                "공평하게 대우해 줌",
+                "서로의 차이를 인정해 줌",
+                "나를 무시하거나 비난함",
+                "의견을 자유롭게 표현하기 어려웠음"
             ]
         )
 
         memo = st.text_area(
-            "기억에 남는 순간",
-            placeholder="예: 친구가 내 의견을 끝까지 들어주었다.",
+            "오늘 기억에 남는 상황",
+            placeholder="오늘 어떤 일이 있었나요?",
             max_chars=500
         )
 
-        submitted = st.form_submit_button(
-            "기록 저장",
+        save = st.form_submit_button(
+            "💚 기록 저장하기",
             use_container_width=True
         )
 
-    if submitted:
+    if save:
+
+        date_text = selected_date.isoformat()
+
+        new_record = {
+            "날짜": date_text,
+            "점수": score,
+            "경험": ", ".join(experiences),
+            "메모": memo.strip()
+        }
+
+        # 같은 날짜의 기록은 덮어쓰기
         st.session_state.records = [
             r for r in st.session_state.records
-            if r["날짜"] != str(record_date)
+            if r["날짜"] != date_text
         ]
 
-        st.session_state.records.append({
-            "날짜": str(record_date),
-            "점수": score,
-            "상황": ", ".join(factors),
-            "메모": memo.strip()
-        })
+        st.session_state.records.append(new_record)
 
-        st.session_state.records.sort(key=lambda r: r["날짜"])
-        st.success("오늘의 기록을 저장했어요!")
+        st.session_state.records.sort(
+            key=lambda x: x["날짜"]
+        )
+
+        st.success("오늘의 존중 기록이 저장되었습니다!")
 
         if score <= 3:
-            st.info("불편했던 경험을 돌아보고, 필요하다면 믿을 수 있는 사람에게 이야기해 보세요.")
+            st.write(
+                "오늘의 경험을 돌아보고 필요한 경우 "
+                "믿을 수 있는 사람에게 이야기해 보세요."
+            )
         elif score <= 6:
-            st.info("존중을 느낀 순간과 아쉬웠던 순간을 함께 돌아보세요.")
+            st.write(
+                "존중받았던 순간과 아쉬웠던 순간을 "
+                "함께 생각해 보세요."
+            )
         else:
-            st.info("오늘의 좋은 경험을 기억하고 다른 사람에게도 존중을 실천해 보세요.")
+            st.write(
+                "오늘 느낀 좋은 존중의 경험을 "
+                "다른 사람에게도 실천해 보세요."
+            )
+
+# --------------------------------
+# 2. 존중 그래프
+# --------------------------------
 
 elif menu == "존중 그래프":
-    st.header("📈 나의 존중 변화")
 
-    if not st.session_state.records:
-        st.info("아직 기록이 없어요. 먼저 오늘의 기록을 작성해 주세요.")
-    else:
-        df = pd.DataFrame(st.session_state.records)
-        df["날짜"] = pd.to_datetime(df["날짜"])
-        df = df.sort_values("날짜")
+    st.header("📊 나의 존중 그래프")
 
-        latest = df["날짜"].max().date()
-        default_start = latest - timedelta(days=6)
+    records = st.session_state.records
 
-        date_range = st.date_input(
-            "조회 기간",
-            value=(default_start, latest)
+    if len(records) == 0:
+
+        st.info(
+            "아직 기록이 없습니다. "
+            "먼저 오늘의 존중 기록을 작성해 주세요."
         )
 
-        if isinstance(date_range, (tuple, list)) and len(date_range) == 2:
-            start, end = date_range
-        else:
-            start, end = df["날짜"].min().date(), latest
+    else:
 
-        if start > end:
-            st.error("시작일은 종료일보다 늦을 수 없어요.")
+        sorted_records = sorted(
+            records,
+            key=lambda x: x["날짜"]
+        )
+
+        latest = date.fromisoformat(
+            sorted_records[-1]["날짜"]
+        )
+
+        start_default = latest - timedelta(days=6)
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            start_date = st.date_input(
+                "시작 날짜",
+                value=start_default,
+                key="start_date"
+            )
+
+        with col2:
+            end_date = st.date_input(
+                "종료 날짜",
+                value=latest,
+                key="end_date"
+            )
+
+        if start_date > end_date:
+
+            st.error("시작 날짜를 종료 날짜보다 빠르게 설정해 주세요.")
+
         else:
-            view = df[
-                (df["날짜"].dt.date >= start)
-                & (df["날짜"].dt.date <= end)
+
+            filtered = [
+                r for r in sorted_records
+                if start_date.isoformat()
+                <= r["날짜"]
+                <= end_date.isoformat()
             ]
 
-            if view.empty:
-                st.warning("선택한 기간에 기록이 없어요.")
+            if len(filtered) == 0:
+
+                st.warning("선택한 기간에 기록이 없습니다.")
+
             else:
+
+                scores = [
+                    int(r["점수"])
+                    for r in filtered
+                ]
+
+                dates = [
+                    r["날짜"]
+                    for r in filtered
+                ]
+
+                average = sum(scores) / len(scores)
+                highest = max(scores)
+                lowest = min(scores)
+
                 c1, c2, c3 = st.columns(3)
-                c1.metric("평균 점수", f"{view['점수'].mean():.1f}점")
-                c2.metric("최고 점수", f"{view['점수'].max()}점")
-                c3.metric("기록 일수", f"{len(view)}일")
 
-                fig = px.line(
-                    view,
+                c1.metric(
+                    "평균 존중 점수",
+                    f"{average:.1f}점"
+                )
+
+                c2.metric(
+                    "최고 점수",
+                    f"{highest}점"
+                )
+
+                c3.metric(
+                    "기록한 날짜",
+                    f"{len(scores)}일"
+                )
+
+                st.markdown("---")
+                st.subheader("📈 날짜별 존중 변화")
+
+                chart_data = {
+                    "날짜": dates,
+                    "존중 점수": scores
+                }
+
+                st.line_chart(
+                    chart_data,
                     x="날짜",
-                    y="점수",
-                    markers=True,
-                    range_y=[0, 10],
-                    title="날짜별 존중 점수",
-                    hover_data=["상황", "메모"]
+                    y="존중 점수"
                 )
-
-                fig.update_traces(
-                    line_color="#45A477",
-                    line_width=3,
-                    marker_size=9
-                )
-                fig.update_layout(
-                    plot_bgcolor="white",
-                    paper_bgcolor="white",
-                    yaxis=dict(dtick=1, gridcolor="#E5EDE7"),
-                    xaxis=dict(gridcolor="#EEF2EF")
-                )
-
-                st.plotly_chart(fig, use_container_width=True)
 
                 st.caption(
-                    "이 그래프는 기록한 개인의 경험을 보여 주며, "
-                    "주변 전체의 존중 분위기를 객관적으로 측정하는 자료는 아니에요."
+                    "점수가 높을수록 존중받았다고 느낀 정도가 높습니다."
                 )
 
-else:
-    st.header("📚 기록 모아보기")
+                st.markdown("---")
+                st.subheader("💬 기록 분석")
 
-    if not st.session_state.records:
-        st.info("저장된 기록이 없어요.")
+                if average >= 8:
+                    st.success(
+                        "전반적으로 존중을 많이 느낀 기간입니다."
+                    )
+                elif average >= 5:
+                    st.info(
+                        "존중을 느낀 순간과 아쉬운 순간이 함께 있었던 기간입니다."
+                    )
+                else:
+                    st.warning(
+                        "존중받는 분위기가 아쉽다고 느낀 기간입니다. "
+                        "어떤 상황이 영향을 주었는지 돌아보세요."
+                    )
+
+                st.write(
+                    f"가장 높은 점수: {highest}점"
+                )
+                st.write(
+                    f"가장 낮은 점수: {lowest}점"
+                )
+
+# --------------------------------
+# 3. 기록 모아보기
+# --------------------------------
+
+elif menu == "기록 모아보기":
+
+    st.header("📚 나의 기록 모아보기")
+
+    records = sorted(
+        st.session_state.records,
+        key=lambda x: x["날짜"],
+        reverse=True
+    )
+
+    if len(records) == 0:
+
+        st.info("아직 저장된 기록이 없습니다.")
+
     else:
-        df = pd.DataFrame(st.session_state.records)
-        df = df.sort_values("날짜", ascending=False)
 
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        for record in records:
 
-        st.download_button(
-            "📥 CSV 파일 다운로드",
-            data=df.to_csv(index=False).encode("utf-8-sig"),
-            file_name="respect_records.csv",
-            mime="text/csv"
+            with st.expander(
+                f"{record['날짜']} | {record['점수']}점"
+            ):
+
+                st.write(
+                    "**경험:**",
+                    record["경험"] if record["경험"] else "입력 없음"
+                )
+
+                st.write(
+                    "**메모:**",
+                    record["메모"] if record["메모"] else "입력 없음"
+                )
+
+        st.markdown("---")
+
+        st.subheader("📥 기록 다운로드")
+
+        output = io.StringIO()
+        writer = csv.DictWriter(
+            output,
+            fieldnames=["날짜", "점수", "경험", "메모"]
         )
 
-        selected = st.selectbox("삭제할 날짜", df["날짜"].tolist())
+        writer.writeheader()
+        writer.writerows(records)
 
-        if st.button("선택한 기록 삭제"):
+        st.download_button(
+            "CSV 파일 다운로드",
+            data="\ufeff" + output.getvalue(),
+            file_name="하루_존중_기록.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+
+        st.markdown("---")
+        st.subheader("🗑️ 기록 삭제")
+
+        delete_date = st.selectbox(
+            "삭제할 날짜 선택",
+            [r["날짜"] for r in records]
+        )
+
+        confirm = st.checkbox(
+            "선택한 기록을 삭제하겠습니다."
+        )
+
+        if st.button(
+            "선택한 기록 삭제",
+            disabled=not confirm
+        ):
+
             st.session_state.records = [
                 r for r in st.session_state.records
-                if r["날짜"] != selected
+                if r["날짜"] != delete_date
             ]
-            st.success("기록을 삭제했어요.")
+
+            st.success("기록이 삭제되었습니다.")
             st.rerun()
 
-st.divider()
+# --------------------------------
+# 하단 안내
+# --------------------------------
+
+st.markdown("---")
+
 st.caption(
-    "💚 존중은 서로의 의견을 듣고 차이를 인정하는 데서 시작됩니다. "
-    "기록은 현재 세션에 저장되며, 세션이 종료되면 사라질 수 있어요."
+    "💚 존중은 서로의 의견을 듣고 차이를 인정하는 데서 시작됩니다."
+)
+
+st.caption(
+    "※ 현재 기록은 앱 세션에 저장됩니다. "
+    "세션이 종료되거나 서버가 재시작되면 기록이 사라질 수 있습니다."
 )
